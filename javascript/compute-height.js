@@ -1,33 +1,64 @@
-const TAB_OFFSET_PADDING = 5;
+const POLLING_TIMEOUT = 500;
 
-function getRecursiveParentNode(el, n) {
-    if(n <= 0) return el;
-    if(el === null || el.parentNode === null) return el;
-    return getRecursiveParentNode(el.parentNode, n-1);
-}
+document.addEventListener("DOMContentLoaded", (e) => {
+    onComfyuiTabLoaded(setupComfyuiTabEvents);
+});
 
-const getDynamicElementFromContainer = (container) => {
-    const webuiParentDepth = 7;
-    return getRecursiveParentNode(container, webuiParentDepth);
-}
+function onComfyuiTabLoaded(callback) {
+    const comfyui_document = getComfyuiContainer();
+    const tab_nav = getTabNav();
 
-function computeComfyuiElementHeight() {
-    const tab = document.getElementById("tab_comfyui_webui_root");
-    const container = document.getElementById("comfyui_webui_container");
-    const footerToRemove = document.querySelector('#footer');
-    const dynamicElement = getDynamicElementFromContainer(container);
-
-    if(dynamicElement !== null) {
-        const height = dynamicElement.offsetHeight;
-        container.style.height = `calc(100% - ${height-TAB_OFFSET_PADDING}px)`;
-        updateFooterStyle(tab.style.display, footerToRemove);
+    if (comfyui_document === null || tab_nav === null) {
+        // webui not yet ready, try again in a bit
+        setTimeout(() => { onComfyuiTabLoaded(callback); }, POLLING_TIMEOUT);
+        return;
     }
 
-    // polling ew
-    setTimeout(computeComfyuiElementHeight, 200);
+    callback();
 }
 
-function updateFooterStyle(tabDisplay, footer) {
+function setupComfyuiTabEvents() {
+    setupReloadOnErrorEvent();
+    setupResizeTabEvent();
+    setupToggleFooterEvent();
+
+    updateComfyuiTabHeight();
+}
+
+function setupReloadOnErrorEvent() {
+    const comfyui_document = getComfyuiContainer();
+    comfyui_document.addEventListener("error", () => {
+        setTimeout(() => {
+            reloadObjectElement(comfyui_document);
+        }, POLLING_TIMEOUT);
+    });
+}
+
+function setupResizeTabEvent() {
+    window.addEventListener("resize", updateComfyuiTabHeight);
+}
+
+function setupToggleFooterEvent() {
+    new MutationObserver((mutationsList) => {
+        for (const mutation of mutationsList) {
+            if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+                updateFooterStyle();
+            }
+        }
+    })
+    .observe(getComfyuiTab(), { attributes: true });
+}
+
+function updateComfyuiTabHeight() {
+    const container = getComfyuiContainer();
+    const tab_nav_bottom = getTabNav().getBoundingClientRect().bottom;
+    container.style.height = `calc(100% - ${tab_nav_bottom}px)`;
+}
+
+function updateFooterStyle() {
+    const tabDisplay = getComfyuiTab().style.display;
+    const footer = getFooter();
+
     if(footer === null) return;
     if(tabDisplay === 'block') {
         footer.classList.add('comfyui-remove-display');
@@ -37,6 +68,23 @@ function updateFooterStyle(tabDisplay, footer) {
     }
 }
 
-document.addEventListener("DOMContentLoaded", (e) => {
-    computeComfyuiElementHeight();
-});
+function getTabNav() {
+    const tabs = document.getElementById("tabs") ?? null;
+    return tabs ? tabs.querySelector(".tab-nav") : null;
+}
+
+function getComfyuiTab() {
+    return document.getElementById("tab_comfyui_webui_root") ?? null;
+}
+
+function getComfyuiContainer() {
+    return document.getElementById("comfyui_webui_container") ?? null;
+}
+
+function getFooter() {
+    return document.querySelector('#footer') ?? null;
+}
+
+function reloadObjectElement(objectElement) {
+    objectElement.data = objectElement.data;
+}

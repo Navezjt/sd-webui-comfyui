@@ -1,15 +1,33 @@
+import json
 import sys
 import os
-import importlib
-from modules import shared
 from torch import multiprocessing
-from modules import script_callbacks
 from lib_comfyui import async_comfyui_loader, webui_settings
-importlib.reload(webui_settings)
-importlib.reload(async_comfyui_loader)
+from lib_comfyui.parallel_utils import SynchronizingQueue, ProducerHandler
+from modules import shared
 
 
-thread = None
+def get_cpu_state_dict():
+    return unwrap_cpu_state_dict(shared.sd_model.state_dict())
+
+
+def unwrap_cpu_state_dict(state_dict: dict) -> dict:
+    model_key_prefixes = ('cond_stage_model', 'first_stage_model', 'model.diffusion_model')
+    return {
+        k.replace('.wrapped.', '.'): v.cpu().share_memory_()
+        for k, v in state_dict.items()
+        if k.startswith(model_key_prefixes)
+    }
+
+
+def get_opts_outdirs():
+    return shared.opts.dumpjson()
+
+
+comfyui_process = None
+multiprocessing_spawn = multiprocessing.get_context('spawn')
+state_dict_producer = ProducerHandler(SynchronizingQueue(get_cpu_state_dict, ctx=multiprocessing_spawn))
+shared_opts_producer = ProducerHandler(SynchronizingQueue(get_opts_outdirs, ctx=multiprocessing_spawn))
 
 
 def start():
@@ -17,36 +35,38 @@ def start():
     if not os.path.exists(install_location):
         return
 
-    multiprocessing_spawn = multiprocessing.get_context('spawn')
-    model_queue = multiprocessing_spawn.Queue()
-    start_comfyui_process(multiprocessing_spawn, model_queue, install_location)
-
-    def on_model_loaded(model):
-        model_queue.put(model.sd_model_checkpoint)
-
-    script_callbacks.on_model_loaded(on_model_loaded)
-    if shared.sd_model is not None:
-        on_model_loaded(shared.sd_model)
+    state_dict_producer.start()
+    shared_opts_producer.start()
+    start_comfyui_process(install_location)
 
 
-def start_comfyui_process(multiprocessing_spawn, model_queue, install_location):
-    global thread
+def start_comfyui_process(install_location):
+    global comfyui_process
     original_sys_path = list(sys.path)
     sys_path_to_add = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-
     try:
         sys.path.insert(0, sys_path_to_add)
-        thread = multiprocessing_spawn.Process(target=async_comfyui_loader.main, args=(model_queue, install_location), daemon=True)
-        thread.start()
+        comfyui_process = multiprocessing_spawn.Process(
+            target=async_comfyui_loader.main,
+            args=(state_dict_producer.queue, shared_opts_producer.queue, install_location),
+            daemon=True,
+        )
+        comfyui_process.start()
     finally:
         sys.path.clear()
         sys.path.extend(original_sys_path)
 
 
 def stop():
-    global thread
-    if thread is None:
+    stop_comfyui_process()
+    state_dict_producer.stop()
+    shared_opts_producer.stop()
+
+
+def stop_comfyui_process():
+    global comfyui_process
+    if comfyui_process is None:
         return
 
-    thread.terminate()
-    thread = None
+    comfyui_process.terminate()
+    comfyui_process = None
