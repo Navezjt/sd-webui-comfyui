@@ -1,14 +1,29 @@
 const POLLING_TIMEOUT = 500;
 
-document.addEventListener("DOMContentLoaded", (e) => {
+function uuidv4() {
+    return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+}
+
+const WEBUI_CLIENT_ID = uuidv4();
+
+function changeDisplayedWorkflowType(targetWorkflowType) {
+    const targetIFrameElement = getWorkflowTypeIFrame(targetWorkflowType);
+    const currentIFrameElement = targetIFrameElement.parentElement.querySelector(".comfyui-workflow-type-visible");
+    currentIFrameElement.classList.remove("comfyui-workflow-type-visible");
+    targetIFrameElement.classList.add("comfyui-workflow-type-visible");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    onComfyuiTabLoaded(clearEnabledDisplayNames);
     onComfyuiTabLoaded(setupComfyuiTabEvents);
 });
 
 function onComfyuiTabLoaded(callback) {
-    const comfyui_document = getComfyuiContainer();
-    const tab_nav = getTabNav();
-
-    if (comfyui_document === null || tab_nav === null) {
+    if (getClearEnabledDisplayNamesButtons().some(e => e === null) ||
+        getWorkflowTypeIds() === null ||
+        getComfyuiContainer() === null ||
+        getTabNav() === null
+    ) {
         // webui not yet ready, try again in a bit
         setTimeout(() => { onComfyuiTabLoaded(callback); }, POLLING_TIMEOUT);
         return;
@@ -17,20 +32,25 @@ function onComfyuiTabLoaded(callback) {
     callback();
 }
 
+function clearEnabledDisplayNames() {
+    for (const clearButton of getClearEnabledDisplayNamesButtons()) {
+        clearButton.click();
+    }
+}
+
 function setupComfyuiTabEvents() {
-    setupReloadOnErrorEvent();
     setupResizeTabEvent();
     setupToggleFooterEvent();
 
     updateComfyuiTabHeight();
+
+    getWorkflowTypeIds().forEach(id => setupIFrame(id));
 }
 
-function setupReloadOnErrorEvent() {
-    const comfyui_document = getComfyuiContainer();
-    comfyui_document.addEventListener("error", () => {
-        setTimeout(() => {
-            reloadObjectElement(comfyui_document);
-        }, POLLING_TIMEOUT);
+function reloadComfyuiIFrames() {
+    getWorkflowTypeIds().forEach(id => {
+        const comfyuiFrame = getWorkflowTypeIFrame(id);
+        reloadFrameElement(comfyuiFrame);
     });
 }
 
@@ -51,8 +71,8 @@ function setupToggleFooterEvent() {
 
 function updateComfyuiTabHeight() {
     const container = getComfyuiContainer();
-    const tab_nav_bottom = getTabNav().getBoundingClientRect().bottom;
-    container.style.height = `calc(100% - ${tab_nav_bottom}px)`;
+    const tabNavBottom = getTabNav().getBoundingClientRect().bottom;
+    container.style.height = `calc(100% - ${tabNavBottom}px)`;
 }
 
 function updateFooterStyle() {
@@ -66,6 +86,13 @@ function updateFooterStyle() {
     else {
         footer.classList.remove('comfyui-remove-display');
     }
+}
+
+function getClearEnabledDisplayNamesButtons() {
+    return [
+        document.getElementById("script_txt2txt_comfyui_clear_enabled_display_names") ?? null,
+        document.getElementById("script_img2img_comfyui_clear_enabled_display_names") ?? null,
+    ];
 }
 
 function getTabNav() {
@@ -85,6 +112,31 @@ function getFooter() {
     return document.querySelector('#footer') ?? null;
 }
 
-function reloadObjectElement(objectElement) {
-    objectElement.data = objectElement.data;
+function getWorkflowTypeIFrame(workflowTypeId) {
+    return document.querySelector(`[workflow_type_id="${workflowTypeId}"]`);
+}
+
+function getWorkflowTypeIds() {
+    return getExtensionDynamicProperty('workflow_type_ids');
+}
+
+function getExtensionDynamicProperty(key) {
+    return JSON.parse(document.querySelector(`[sd_webui_comfyui_key="${key}"]`)?.innerText ?? "null");
+}
+
+function reloadFrameElement(iframeElement) {
+    oldSrc = iframeElement.src;
+    iframeElement.src = '';
+    iframeElement.src = oldSrc;
+}
+
+function setupIFrame(workflowTypeId) {
+    let messageToReceive = workflowTypeId;
+
+    const iframeSearchParams = new URLSearchParams();
+    iframeSearchParams.set("workflowTypeId", workflowTypeId);
+    iframeSearchParams.set("webuiClientId", WEBUI_CLIENT_ID);
+    const iframe = getWorkflowTypeIFrame(workflowTypeId);
+    const base_src = iframe.getAttribute("base_src");
+    iframe.src = base_src + "?" + iframeSearchParams.toString();
 }
