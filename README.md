@@ -1,18 +1,20 @@
 # sd-webui-comfyui
 ## Overview
-sd-webui-comfyui is an extension for [Automatic1111's stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that embeds [ComfyUI](https://github.com/comfyanonymous/ComfyUI) in its own tab. This allows to create ComfyUI nodes that interact directly with some parts of the webui's normal pipeline.
+sd-webui-comfyui is an extension for [Automatic1111's stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that embeds [ComfyUI](https://github.com/comfyanonymous/ComfyUI) workflows in different sections of the normal pipeline of the webui. This allows to create ComfyUI nodes that interact directly with some parts of the webui's normal pipeline.
 
-![ezgif com-video-to-gif(1)](https://user-images.githubusercontent.com/34081873/226529347-23e61102-cf83-457e-b94c-89337fd38c4d.gif)
+![front-page-gif](/resources/front-page.gif)
 
 ## Features
-- [x] Load comfyui directly into the webui
-- [x] Support for [loading custom nodes from other webui extensions](https://github.com/ModelSurge/sd-webui-comfyui/wiki/Developing-custom-nodes-from-webui-extensions)
-- [ ] Webui nodes: `txt2img`, `img2img` and `extras` for integrating the webui in comfyui workflows. 
-- [x] Webui node: [`Load Webui Checkpoint`](https://github.com/ModelSurge/sd-webui-comfyui/wiki/Webui-Nodes)
-- [ ] Webui node: `Latent Webui Noise Generator`
-- [ ] Webui node: `Webui Prompt Parser`
+- Use ComfyUI directly into the Webui
+- Support for [loading custom nodes from other Webui extensions](https://github.com/ModelSurge/sd-webui-comfyui/wiki/Developing-custom-nodes-from-webui-extensions)
+- Integration of ComfyUI workflows directly into the Webui's pipeline, such as `preprocess`, `preprocess (latent)`, `unet`, `postprocess (latent)`, `postprocess`, `transformer text encode`, etc. 
+- Webui nodes for sharing resources and data, such as the model, the prompt, etc.
 
-For a full overview of all the advantageous features this extension adds to ComfyUI, check out the [wiki page](https://github.com/ModelSurge/sd-webui-comfyui/wiki). 
+For a full overview of all the advantageous features this extension adds to ComfyUI and to the Webui, check out the [wiki page](https://github.com/ModelSurge/sd-webui-comfyui/wiki). 
+
+## Supported versions
+- A1111's Webui >= `V1.5.1`
+- ComfyUI == `Latest`
 
 ## Installation
 1) Go to Extensions > Available
@@ -21,6 +23,21 @@ For a full overview of all the advantageous features this extension adds to Comf
 4) Click the `Install` button of the ComfyUI Tab cell
 5) Restart the webui
 6) Go to the `ComfyUI` tab, and follow the instructions
+
+## Remote users, reverse proxies, etc.
+The extension is now able to load comfyui for remote users using a local reverse proxy.
+This is necessary when the webui is started remotely, for example when:
+- using the command line arguments `--share`, or `--ngrok`
+- using reverse proxy options of the [sd-webui-tunnels](https://github.com/Bing-su/sd-webui-tunnels) extension
+
+If you want the extension to keep the reverse proxy disabled or always enable it for some reason, you can update your preferences in the settings tab.
+
+To start the reverse proxy, the extension needs the command line argument `--api` for the webui, which starts a fastapi server.
+Without fastapi, the extension will not be able to create a reverse proxy for comfyui, and then remote browsers will not be able to load comfyui iframes.
+
+In practice, if the webui url is `http://localhost:7860`, then the extension effectively creates two reverse proxies:
+- An HTTP reverse proxy at POST, GET, PUT and DELETE http://localhost:7860/sd-webui-comfyui/comfyui
+- A websockets reverse proxy at ws://localhost:7860/sd-webui-comfyui/comfyui/ws
 
 ## Contributing
 We welcome contributions from anyone who is interested in improving sd-webui-comfyui. If you would like to contribute, please follow these steps:
