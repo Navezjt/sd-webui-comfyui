@@ -48,19 +48,19 @@ async function patchDefaultGraph(iframeInfo) {
     }
 
     app.original_loadGraphData = app.loadGraphData;
-    app.loadGraphData = (graphData) => {
-        if (graphData) {
+    const doLoadGraphData = graphData => {
+        if (graphData !== "auto") {
             return app.original_loadGraphData(graphData);
-        }
-
-        if (iframeInfo.defaultWorkflow !== "auto") {
-            return app.original_loadGraphData(iframeInfo.defaultWorkflow);
         }
 
         app.graph.clear();
 
         const from_webui = LiteGraph.createNode("FromWebui");
         const to_webui = LiteGraph.createNode("ToWebui");
+
+        if (!from_webui || !to_webui) {
+            return;
+        }
 
         app.graph.add(from_webui);
         app.graph.add(to_webui);
@@ -71,6 +71,15 @@ async function patchDefaultGraph(iframeInfo) {
         }
 
         app.graph.arrange();
+    };
+
+    app.loadGraphData = (graphData) => {
+        if (graphData) {
+            return doLoadGraphData(graphData);
+        }
+        else {
+            return doLoadGraphData(iframeInfo.defaultWorkflow);
+        }
     };
 
     app.loadGraphData();

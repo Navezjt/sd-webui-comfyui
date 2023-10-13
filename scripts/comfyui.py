@@ -2,7 +2,7 @@ import torch
 
 from modules import scripts
 from lib_comfyui import global_state, platform_utils, external_code, default_workflow_types, comfyui_process
-from lib_comfyui.webui import callbacks, settings, workflow_patcher, gradio_utils, accordion
+from lib_comfyui.webui import callbacks, settings, patches, gradio_utils, accordion
 from lib_comfyui.comfyui import iframe_requests, type_conversion
 
 
@@ -51,15 +51,14 @@ class ComfyUIScript(scripts.Script):
         global_state.enabled_workflow_type_ids.update(enabled_workflow_type_ids)
 
         global_state.queue_front = queue_front
-        workflow_patcher.patch_processing(p)
+        patches.patch_processing(p)
 
     def postprocess_batch_list(self, p, pp, *args, **kwargs):
-        if not getattr(global_state, 'enabled', True):
-            return
-        if len(pp.images) == 0:
+        if not external_code.is_workflow_type_enabled(default_workflow_types.postprocess_workflow_type.get_ids(self.get_tab())[0]):
             return
 
         all_results = []
+        p_rescale_factor = 0
         for batch_input in extract_contiguous_buckets(pp.images, p.batch_size):
             batch_results = external_code.run_workflow(
                 workflow_type=default_workflow_types.postprocess_workflow_type,
@@ -68,13 +67,15 @@ class ComfyUIScript(scripts.Script):
                 identity_on_error=True,
             )
 
-            for list_to_scale in [p.prompts, p.negative_prompts, p.seeds, p.subseeds]:
-                list_to_scale[:] = list_to_scale * len(batch_results)
-
+            p_rescale_factor += len(batch_results)
             all_results.extend(
                 image
                 for batch in batch_results
                 for image in type_conversion.comfyui_image_to_webui(batch, return_tensors=True))
+
+        p_rescale_factor = max(1, p_rescale_factor)
+        for list_to_scale in [p.prompts, p.negative_prompts, p.seeds, p.subseeds]:
+            list_to_scale[:] = list_to_scale * p_rescale_factor
 
         pp.images.clear()
         pp.images.extend(all_results)
@@ -103,4 +104,4 @@ def extract_contiguous_buckets(images, batch_size):
 callbacks.register_callbacks()
 default_workflow_types.add_default_workflow_types()
 settings.init_extension_base_dir()
-workflow_patcher.apply_patches()
+patches.apply_patches()

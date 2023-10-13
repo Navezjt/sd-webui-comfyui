@@ -12,6 +12,10 @@ def create_section():
 
     section = ('comfyui', "ComfyUI")
     shared.opts.add_option('comfyui_enabled', shared.OptionInfo(True, 'Enable sd-webui-comfyui extension', section=section))
+
+    shared.opts.add_option("comfyui_update_button", shared.OptionInfo(
+        "Update comfyui (requires reload ui)", "Update comfyui", gr.Button, section=section))
+
     shared.opts.add_option("comfyui_install_location", shared.OptionInfo(
         install_comfyui.default_install_location, "ComfyUI install location", section=section))
     shared.opts.add_option("comfyui_additional_args", shared.OptionInfo(
@@ -64,6 +68,17 @@ def update_reverse_proxy_enabled():
     from modules import shared
     reverse_proxy_enabled = shared.opts.data.get('comfyui_reverse_proxy_enabled', next(iter(reverse_proxy_choices.keys())))
     global_state.reverse_proxy_enabled = reverse_proxy_choices[reverse_proxy_enabled]() and getattr(shared.cmd_opts, "api", False)
+
+
+@ipc.restrict_to_process("webui")
+def subscribe_update_button(component, **kwargs):
+    if getattr(component, "elem_id", None) == "setting_comfyui_update_button":
+        component.click(fn=update_comfyui)
+
+
+@ipc.restrict_to_process("webui")
+def update_comfyui():
+    install_comfyui.update(get_install_location())
 
 
 ipc_strategy_choices = {
@@ -130,17 +145,44 @@ def get_comfyui_client_url():
     """
     from modules import shared
     loopback_address = '127.0.0.1'
-    server_url = "http://" + (get_setting_value('--listen') or getattr(shared.cmd_opts, 'comfyui_listen', loopback_address)) + ":" + str(get_port())
+    server_url = get_setting_value('--listen') or getattr(shared.cmd_opts, 'comfyui_listen', loopback_address)
     client_url = shared.opts.data.get('comfyui_client_address', None) or getattr(shared.cmd_opts, 'webui_comfyui_client_address', None) or server_url
+    client_url = canonicalize_url(client_url, get_port())
     if client_url.startswith(('http://0.0.0.0', 'https://0.0.0.0')):
         print(textwrap.dedent(f"""
-            [sd-webui-comfyui] changing the ComfyUI client address from {client_url} to http://{loopback_address}
+            [sd-webui-comfyui] changing the ComfyUI client address from {client_url} to {loopback_address}
             This does not change the --listen address passed to ComfyUI, but instead the address used by the extension to load the iframe
             To override this behavior, navigate to the extension settings or use the --webui-comfyui-client-address <address> cli argument
         """), sys.stderr)
         client_url = client_url.replace("0.0.0.0", "127.0.0.1", 1)
 
     return client_url
+
+
+def canonicalize_url(input_url: str, default_port: int = 8189) -> str:
+    from urllib.parse import urlparse, urlunparse
+
+    # Step 1: Prepend 'http://' if scheme is missing
+    if not input_url.startswith(('http://', 'https://')):
+        input_url = 'http://' + input_url
+
+    # Step 2: Parse the modified URL
+    parsed = urlparse(input_url)
+
+    # Step 3: Add the missing scheme
+    scheme = parsed.scheme if parsed.scheme else 'http'
+
+    # Step 4: Add the missing port
+    netloc = parsed.netloc
+    if ':' not in netloc:  # Check if port is missing
+        netloc += f":{default_port}"
+    elif netloc.count(':') == 1 and parsed.scheme:  # If port exists but scheme was present in input
+        host, port = netloc.split(':')
+        netloc = f"{host}:{port}"
+
+    # Reconstruct the URL
+    canonicalized_url = urlunparse((scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+    return canonicalized_url
 
 
 @ipc.restrict_to_process('webui')
