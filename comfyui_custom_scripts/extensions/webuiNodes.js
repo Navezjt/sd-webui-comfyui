@@ -1,6 +1,6 @@
 import { app } from "/scripts/app.js";
-import { iframeRegisteredEvent } from "/webui_scripts/sd-webui-comfyui/extensions/webuiEvents.js";
-import { isString, getTypesLength } from "/webui_scripts/sd-webui-comfyui/extensions/webuiTypes.js";
+import { iframeRegisteredEvent } from "/extensions/webui_scripts/sd-webui-comfyui/extensions/webuiEvents.js";
+import { isString, getTypesLength } from "/extensions/webui_scripts/sd-webui-comfyui/extensions/webuiTypes.js";
 
 
 function createVoidWidget(node, name) {
@@ -85,8 +85,8 @@ app.registerExtension({
             getTypesLength(iframeInfo.webuiIoTypes.outputs),
             getTypesLength(iframeInfo.webuiIoTypes.inputs),
         );
-        // 240 and 40 are empirical values that seem to work
-        node.size = [240, 40 + distanceBetweenIoSlots * maxIoLength];
+        // 260 and 40 are empirical values that seem to work
+        node.size = [260, 40 + distanceBetweenIoSlots * maxIoLength];
     },
     async setup() {
         app.loadGraphData();

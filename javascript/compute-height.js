@@ -1,4 +1,5 @@
-const POLLING_TIMEOUT = 500;
+const SD_WEBUI_COMFYUI_POLLING_TIMEOUT = 500;
+
 
 function uuidv4() {
     return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
@@ -22,10 +23,11 @@ function onComfyuiTabLoaded(callback) {
     if (getClearEnabledDisplayNamesButtons().some(e => e === null) ||
         getWorkflowTypeIds() === null ||
         getComfyuiContainer() === null ||
-        getTabNav() === null
+        getTabNav() === null ||
+        getWebuiClientIdTextArea() === null
     ) {
         // webui not yet ready, try again in a bit
-        setTimeout(() => { onComfyuiTabLoaded(callback); }, POLLING_TIMEOUT);
+        setTimeout(() => { onComfyuiTabLoaded(callback); }, SD_WEBUI_COMFYUI_POLLING_TIMEOUT);
         return;
     }
 
@@ -39,6 +41,7 @@ function clearEnabledDisplayNames() {
 }
 
 function setupComfyuiTabEvents() {
+    setupWebuiClientId();
     setupResizeTabEvent();
     setupToggleFooterEvent();
 
@@ -49,9 +52,14 @@ function setupComfyuiTabEvents() {
 
 function reloadComfyuiIFrames() {
     getWorkflowTypeIds().forEach(id => {
-        const comfyuiFrame = getWorkflowTypeIFrame(id);
-        reloadFrameElement(comfyuiFrame);
+        setupIFrame(id);
     });
+}
+
+function setupWebuiClientId() {
+    const textArea = getWebuiClientIdTextArea();
+    textArea.value = WEBUI_CLIENT_ID;
+    textArea.dispatchEvent(new Event('input'));
 }
 
 function setupResizeTabEvent() {
@@ -106,6 +114,10 @@ function getComfyuiTab() {
 
 function getComfyuiContainer() {
     return document.getElementById("comfyui_webui_container") ?? null;
+}
+
+function getWebuiClientIdTextArea() {
+    return document.querySelector("#comfyui_webui_client_id textarea") ?? null;
 }
 
 function getFooter() {

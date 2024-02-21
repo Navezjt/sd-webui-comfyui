@@ -1,14 +1,13 @@
 import json
 import multiprocessing
 from queue import Empty
-from typing import List, Any, Dict, Tuple
+from typing import List, Any, Dict, Tuple, Optional
 from lib_comfyui import ipc, global_state, torch_utils, external_code
 from lib_comfyui.comfyui import queue_tracker
 
 
 class ComfyuiIFrameRequests:
     finished_comfyui_queue = multiprocessing.Queue()
-    focused_webui_client_id = None
     server_instance = None
     sid_map = {}
 
@@ -19,12 +18,12 @@ class ComfyuiIFrameRequests:
             data = {}
 
         cls = ComfyuiIFrameRequests
-        if cls.focused_webui_client_id is None:
+        if global_state.focused_webui_client_id is None:
             raise RuntimeError('No active webui connection')
 
-        ws_client_ids = cls.sid_map[cls.focused_webui_client_id]
+        ws_client_ids = cls.sid_map[global_state.focused_webui_client_id]
         if workflow_type not in ws_client_ids:
-            raise RuntimeError(f"The workflow type {workflow_type} has not been registered by the active webui client {cls.focused_webui_client_id}")
+            raise RuntimeError(f"The workflow type {workflow_type} has not been registered by the active webui client {global_state.focused_webui_client_id}")
 
         clear_queue(cls.finished_comfyui_queue)
         cls.server_instance.send_sync(request, data, ws_client_ids[workflow_type])
@@ -70,20 +69,42 @@ class ComfyuiIFrameRequests:
             global_state.node_inputs = None
 
     @staticmethod
+    @ipc.restrict_to_process('webui')
+    def validate_amount_of_nodes_or_throw(
+        workflow_type_id: str,
+        max_amount_of_FromWebui_nodes: Optional[int],
+        max_amount_of_ToWebui_nodes: Optional[int],
+    ) -> None:
+        workflow_graph = get_workflow_graph(workflow_type_id)
+        all_nodes = workflow_graph['nodes']
+        enabled_nodes = [node for node in all_nodes if node['mode'] != 2]
+        node_types = [node['type'] for node in enabled_nodes]
+        amount_of_FromWebui_nodes = len([t for t in node_types if t == 'FromWebui'])
+        amount_of_ToWebui_nodes = len([t for t in node_types if t == 'ToWebui'])
+        max_FromWebui_nodes = max_amount_of_FromWebui_nodes if max_amount_of_FromWebui_nodes is not None else amount_of_FromWebui_nodes
+        max_ToWebui_nodes = max_amount_of_ToWebui_nodes if max_amount_of_ToWebui_nodes is not None else amount_of_ToWebui_nodes
+
+        if amount_of_FromWebui_nodes > max_FromWebui_nodes:
+            raise TooManyFromWebuiNodesError(f'Unable to run the workflow {workflow_type_id}. '
+                                             f'Expected at most {max_FromWebui_nodes} FromWebui node(s), '
+                                             f'{amount_of_FromWebui_nodes} were found.')
+
+        if amount_of_ToWebui_nodes > max_ToWebui_nodes:
+            raise TooManyToWebuiNodesError(f'Unable to run the workflow {workflow_type_id}. '
+                                           f'Expected at most {max_ToWebui_nodes} ToWebui node(s), '
+                                           f'{amount_of_ToWebui_nodes} were found.')
+
+    @staticmethod
     @ipc.restrict_to_process('comfyui')
-    def register_client(request):
+    def register_client(request) -> None:
         workflow_type_id = request['workflowTypeId']
         webui_client_id = request['webuiClientId']
         sid = request['sid']
-
-        # TODO: generalize this
-        ComfyuiIFrameRequests.focused_webui_client_id = webui_client_id
 
         if webui_client_id not in ComfyuiIFrameRequests.sid_map:
             ComfyuiIFrameRequests.sid_map[webui_client_id] = {}
 
         ComfyuiIFrameRequests.sid_map[webui_client_id][workflow_type_id] = sid
-
         print(f'registered ws - {workflow_type_id} - {sid}')
 
     @staticmethod
@@ -96,6 +117,14 @@ def extend_infotext_with_comfyui_workflows(p, tab):
     workflows = {}
     for workflow_type in external_code.get_workflow_types(tab):
         workflow_type_id = workflow_type.get_ids(tab)[0]
+        try:
+            ComfyuiIFrameRequests.validate_amount_of_nodes_or_throw(
+                workflow_type_id,
+                workflow_type.max_amount_of_FromWebui_nodes,
+                workflow_type.max_amount_of_ToWebui_nodes,
+            )
+        except RuntimeError:
+            continue
         if not external_code.is_workflow_type_enabled(workflow_type_id):
             continue
 
@@ -122,3 +151,11 @@ def clear_queue(queue: multiprocessing.Queue):
             queue.get(timeout=1)
         except Empty:
             pass
+
+
+class TooManyFromWebuiNodesError(RuntimeError):
+    pass
+
+
+class TooManyToWebuiNodesError(RuntimeError):
+    pass
